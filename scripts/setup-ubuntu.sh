@@ -1,23 +1,25 @@
 #!/usr/bin/env bash
 # imsearch セットアップ（Ubuntu 22.04 / 24.04、メモリ 4GB・CPU のみを想定）
 #
-#   ./scripts/setup-ubuntu.sh [--swap] [--timer] [--no-ollama] [--no-models]
+#   ./scripts/setup-ubuntu.sh [--swap] [--timer] [--web] [--no-ollama] [--no-models]
 #
 #   --swap       swap が無い（1GB 未満）場合に 2GB の /swapfile を作る
 #   --timer      週 1 回の索引更新（systemd timer）を登録する
+#   --web        Web アプリ（imsearch serve、127.0.0.1:8000）を systemd サービスとして常駐させる
 #   --no-ollama  Ollama のインストール・設定をしない（別サーバーの LLM を使う場合）
 #   --no-models  モデルを pull しない
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-WANT_SWAP=0; WANT_TIMER=0; WANT_OLLAMA=1; WANT_MODELS=1
+WANT_SWAP=0; WANT_TIMER=0; WANT_WEB=0; WANT_OLLAMA=1; WANT_MODELS=1
 for a in "$@"; do
   case "$a" in
     --swap) WANT_SWAP=1 ;;
     --timer) WANT_TIMER=1 ;;
+    --web) WANT_WEB=1 ;;
     --no-ollama) WANT_OLLAMA=0 ;;
     --no-models) WANT_MODELS=0 ;;
-    -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
     *) echo "unknown option: $a" >&2; exit 1 ;;
   esac
 done
@@ -87,6 +89,17 @@ if [ "$WANT_TIMER" = 1 ]; then
   $SUDO systemctl enable --now imsearch-ingest.timer
 fi
 
+if [ "$WANT_WEB" = 1 ]; then
+  step "Web アプリ（systemd service）"
+  RUN_USER="${SUDO_USER:-$(id -un)}"
+  sed -e "s#__APP_DIR__#$APP_DIR#g" -e "s#__USER__#$RUN_USER#g" deploy/imsearch-web.service \
+    | $SUDO tee /etc/systemd/system/imsearch-web.service >/dev/null
+  $SUDO systemctl daemon-reload
+  $SUDO systemctl enable --now imsearch-web.service
+  $SUDO systemctl restart imsearch-web.service
+  echo "http://127.0.0.1:8000/ で起動しました（外部公開は deploy/nginx-imsearch.conf を参照）"
+fi
+
 step "診断"
 .venv/bin/imsearch doctor || true
 cat <<MSG
@@ -95,4 +108,5 @@ cat <<MSG
   .venv/bin/imsearch ingest            # 索引の作成（CPU のみだと数時間。README の「索引を別マシンで作る」も参照）
   .venv/bin/imsearch search "repeat-control"
   .venv/bin/imsearch ask "検索ボックスで部分一致検索をしたい"
+  .venv/bin/imsearch serve             # Web アプリ（--web を付けて実行した場合は常駐済み）
 MSG

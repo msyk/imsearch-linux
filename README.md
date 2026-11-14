@@ -25,7 +25,7 @@ INTER-Mediator の日本語マニュアル（https://inter-mediator.info/ja/）�
 
 ```bash
 git clone https://github.com/msyk/imsearch-linux.git && cd imsearch-linux
-./scripts/setup-ubuntu.sh --swap --timer
+./scripts/setup-ubuntu.sh --swap --timer --web
 ```
 
 スクリプトは次を行います（sudo を使います）。
@@ -36,7 +36,8 @@ git clone https://github.com/msyk/imsearch-linux.git && cd imsearch-linux
 4. モデル 2 つを `ollama pull`
 5. `.venv` を作って imsearch をインストールし、`imsearch.env` を作成
 6. `--timer`: 毎週日曜 3 時の索引更新（systemd timer）を登録
-7. `imsearch doctor` で診断
+7. `--web`: Web アプリを systemd サービス（`imsearch-web`）として常駐
+8. `imsearch doctor` で診断
 
 LLM を別のサーバーで動かす場合は `--no-ollama` を付け、`imsearch.env` の `IMSEARCH_LLM_BASE_URL` などを設定します。
 
@@ -60,6 +61,29 @@ LLM を別のサーバーで動かす場合は `--no-ollama` を付け、`imsear
 .venv/bin/imsearch eval                   # eval/questions.yaml で Recall@5 を計測
 .venv/bin/imsearch doctor                 # 環境診断（メモリ・swap・SQLite・Ollama・モデル・索引）
 ```
+
+## Web アプリ
+
+```bash
+.venv/bin/imsearch serve                  # http://127.0.0.1:8000/ で起動
+.venv/bin/imsearch serve --host 0.0.0.0 --port 8080
+```
+
+ブラウザで質問を入力し、「回答を作成」（Ctrl/⌘+Enter）で資料を根拠にした回答を逐次表示します。「検索のみ」なら LLM を使わずに資料の一覧を約 1 秒で返します。英語の質問は、日本語に翻訳して検索・回答し、英訳して表示します（翻訳前の日本語の回答も見られます）。参考資料の番号 `[1]` から出典に飛べます。
+
+| URL | 内容 |
+|---|---|
+| `GET /` | ブラウザ UI |
+| `GET /api/search?q=…&n=10&source=manual` | 検索のみ（JSON） |
+| `POST /api/ask` `{"q": "…", "sources": ["manual"]}` | 回答（Server-Sent Events: `status` `meta` `token` `ja_token` `done` `error`） |
+| `GET /api/health` | 索引の件数・モデル・混雑状況 |
+| `GET /api/docs` | API ドキュメント（OpenAPI） |
+
+メモリ 4GB 向けに、回答の生成は同時に 1 件だけ行い、後続は 3 件まで順番待ちにします。それを超える要求には「混み合っています」と返します（`IMSEARCH_WEB_CONCURRENCY`、`IMSEARCH_WEB_MAX_QUEUE`）。ブラウザを閉じたり「中止」を押したりすると、Ollama 側の生成も止まります。
+
+### インターネットに公開する
+
+`imsearch serve` は既定で 127.0.0.1 だけで待ち受けます。公開するときは nginx などのリバースプロキシを前に置いてください。設定例は [deploy/nginx-imsearch.conf](deploy/nginx-imsearch.conf) です（SSE を逐次届けるための `proxy_buffering off`、長い生成に合わせたタイムアウト、IP ごとの回答リクエスト数の制限を含みます）。HTTPS は certbot などで設定します。
 
 ## 索引を別マシンで作る（推奨）
 
@@ -110,6 +134,8 @@ rsync -a data/ server:imsearch-linux/data/
 | `IMSEARCH_ANALYZE_JA` | `0`（`1` で日本語の質問にも LLM のクエリ解析を使う） |
 | `IMSEARCH_ANALYZE_MODE` | `simple`（`json` で Mac 版と同じ JSON 解析。大きいモデル向け） |
 | `IMSEARCH_NUM_THREAD` | `0`（自動。コンテナ等の CPU 制限を検出） |
+| `IMSEARCH_WEB_HOST` / `IMSEARCH_WEB_PORT` | `127.0.0.1` / `8000` |
+| `IMSEARCH_WEB_CONCURRENCY` / `IMSEARCH_WEB_MAX_QUEUE` | `1` / `3` |
 | `IMSEARCH_DB` | `data/imsearch.db` |
 
 全項目は [imsearch.env.example](imsearch.env.example) にあります。
@@ -135,11 +161,15 @@ imsearch/
   retrieve.py       BM25（日本語は bi-gram）＋識別子完全一致＋ベクトル検索を RRF で統合
   answer.py         クエリ解析・翻訳・回答生成
   llm.py            Ollama / OpenAI 互換 API クライアント（メモリ不足時の案内付き）
-  cli.py            コマンドライン（doctor を追加）
+  cli.py            コマンドライン（doctor, serve を追加）
+  web.py            Web アプリ・HTTP API（FastAPI、回答は SSE で逐次送信）
+  static/index.html ブラウザ UI
 deploy/
   ollama-override.conf     Ollama の 4GB 向け systemd 設定
   imsearch-ingest.service  週 1 回の索引更新（timer から起動）
   imsearch-ingest.timer
+  imsearch-web.service     Web アプリの常駐
+  nginx-imsearch.conf      nginx で公開する場合の設定例
 scripts/setup-ubuntu.sh    Ubuntu 用セットアップ
 ```
 

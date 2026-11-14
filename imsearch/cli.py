@@ -170,6 +170,22 @@ def eval_cmd(
     console.print(f"Recall@{k}: {ok}/{len(items)} = {ok / max(1, len(items)):.0%}")
 
 
+@app.command()
+def serve(
+    host: str = typer.Option(config.WEB_HOST, help="待ち受けアドレス（公開時は nginx 等の後ろに置く）"),
+    port: int = typer.Option(config.WEB_PORT, help="ポート番号"),
+):
+    """Web アプリ（ブラウザ UI と HTTP API）を起動する。"""
+    import uvicorn
+
+    if not config.DB_PATH.exists():
+        console.print(f"[yellow]索引がまだありません: {config.DB_PATH} → imsearch ingest[/]")
+    console.print(f"imsearch web: http://{host}:{port}/  (API: /api/search, /api/ask, /api/docs)")
+    # one worker process: the models live in Ollama, the app itself stays small
+    uvicorn.run("imsearch.web:app", host=host, port=port, workers=1, log_level="info",
+                proxy_headers=True, forwarded_allow_ips="127.0.0.1")
+
+
 def _meminfo() -> dict[str, int]:
     """/proc/meminfo in MiB (Linux only)."""
     out = {}

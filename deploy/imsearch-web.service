@@ -1,0 +1,21 @@
+# imsearch Web アプリ。scripts/setup-ubuntu.sh --web で登録（パスとユーザーはそこで書き換え）
+[Unit]
+Description=imsearch web (INTER-Mediator developer search)
+Wants=ollama.service
+After=network-online.target ollama.service
+
+[Service]
+User=__USER__
+WorkingDirectory=__APP_DIR__
+ExecStart=__APP_DIR__/.venv/bin/imsearch serve
+Restart=on-failure
+RestartSec=5
+# the app itself is small (models live in Ollama); keep it from eating into Ollama's share
+MemoryHigh=400M
+MemoryMax=600M
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

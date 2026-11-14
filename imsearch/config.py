@@ -106,6 +106,13 @@ ANALYZE_MODE = _env("ANALYZE_MODE", "simple")
 # Sample descriptions at ingest time: characters of the page file shown to the LLM
 DESCRIBE_PAGE_CHARS = _int("DESCRIBE_PAGE_CHARS", 1500)
 
+# Web server (imsearch serve)
+WEB_HOST = _env("WEB_HOST", "127.0.0.1")   # put nginx etc. in front to publish it
+WEB_PORT = _int("WEB_PORT", 8000)
+WEB_CONCURRENCY = _int("WEB_CONCURRENCY", 1)  # answers generated at the same time (1 for 4GB RAM)
+WEB_MAX_QUEUE = _int("WEB_MAX_QUEUE", 3)      # waiting answers; more requests get "busy"
+WEB_MAX_QUESTION = _int("WEB_MAX_QUESTION", 500)  # characters
+
 # SQLite page cache (KiB). Small on purpose; the OS file cache does the rest.
 SQLITE_CACHE_KB = _int("SQLITE_CACHE_KB", 16384)
 

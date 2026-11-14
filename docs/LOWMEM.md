@@ -85,4 +85,5 @@
 - LLM のエラー表示: Ollama がメモリ不足やモデル未取得で失敗したとき、対処方法を表示。接続できない・タイムアウトの場合も分かりやすく表示。
 - `scripts/setup-ubuntu.sh`、`deploy/`（Ollama 設定、索引更新の systemd service/timer）。
 - CPU スレッド数の自動調整（§5）。
+- Web アプリ（DESIGN §8 Phase 2）: `imsearch serve`。FastAPI ＋ 外部ライブラリに依存しない 1 枚の HTML。回答は Server-Sent Events で逐次表示。4GB 向けに回答の生成を同時 1 件に制限して短い順番待ちを設け、クライアントが切断したら Ollama への接続を閉じて生成を止める。systemd サービス（`deploy/imsearch-web.service`）と nginx の設定例を同梱。
 - マニュアルのキャッシュ一覧（`data/manual/_pages.json`）を絶対パスからファイル名に変更。Mac 版では索引やキャッシュを別マシンにコピーすると取り込みが失敗していた。

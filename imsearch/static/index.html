@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>imsearch — INTER-Mediator 検索</title>
+<style>
+:root {
+  --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e2e2e0;
+  --accent: #2563eb; --accent-weak: #e8efff; --code-bg: #f1f1ee; --warn: #b45309; --err: #b91c1c;
+  --tag-manual: #0f766e; --tag-samples: #7c3aed; --tag-code: #b45309;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161618; --panel: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #2e2e33;
+    --accent: #7aa2ff; --accent-weak: #22304f; --code-bg: #26262b; --warn: #f59e0b; --err: #f87171;
+    --tag-manual: #2dd4bf; --tag-samples: #c4b5fd; --tag-code: #fbbf24;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.7 system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif; }
+main { max-width: 880px; margin: 0 auto; padding: 24px 16px 64px; }
+header h1 { font-size: 20px; margin: 0; }
+header p { margin: 2px 0 16px; color: var(--muted); font-size: 13px; }
+form { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+textarea { width: 100%; min-height: 64px; resize: vertical; border: 0; outline: none; background: transparent;
+  color: var(--text); font: inherit; }
+.row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between;
+  border-top: 1px solid var(--line); padding-top: 10px; margin-top: 6px; }
+.opts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+.opts label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+.btns { display: flex; gap: 8px; }
+button { font: inherit; border-radius: 8px; padding: 6px 14px; cursor: pointer; border: 1px solid var(--line);
+  background: var(--panel); color: var(--text); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: .5; cursor: default; }
+.examples { margin: 10px 2px 0; font-size: 13px; color: var(--muted); }
+.examples a { color: var(--accent); cursor: pointer; margin-right: 12px; text-decoration: none; white-space: nowrap; }
+#status { margin: 18px 2px 6px; font-size: 13px; color: var(--muted); min-height: 1.5em; }
+#status.err { color: var(--err); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px 18px;
+  margin-bottom: 14px; overflow-wrap: anywhere; }
+.card h2 { font-size: 14px; color: var(--muted); margin: 12px 0 0; font-weight: 600; }
+.answer h1, .answer h2, .answer h3, .answer h4 { font-size: 16px; margin: 18px 0 6px; color: var(--text); }
+.answer pre { background: var(--code-bg); border-radius: 8px; padding: 10px 12px; overflow-x: auto;
+  font-size: 13px; line-height: 1.5; }
+.answer code { background: var(--code-bg); border-radius: 4px; padding: 1px 4px; font-size: .92em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.answer pre code { background: none; padding: 0; }
+.answer a.cite { font-size: 12px; vertical-align: super; text-decoration: none; color: var(--accent); }
+.answer details { margin: 8px 0 12px; color: var(--muted); font-size: 13px; }
+.cursor::after { content: "▍"; color: var(--accent); animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+ol.sources { list-style: none; margin: 8px 0 14px; padding: 0; }
+ol.sources li { padding: 8px 0; border-top: 1px solid var(--line); }
+ol.sources li:first-child { border-top: 0; }
+ol.sources li:target { background: var(--accent-weak); border-radius: 6px; }
+.src-title { font-weight: 600; }
+.src-title a { color: var(--text); text-decoration: none; }
+.src-title a:hover { color: var(--accent); text-decoration: underline; }
+.num { color: var(--accent); font-weight: 600; margin-right: 6px; }
+.tag { display: inline-block; font-size: 11px; border: 1px solid currentColor; border-radius: 99px; padding: 0 7px;
+  margin-right: 6px; line-height: 1.6; vertical-align: 1px; }
+.tag.manual { color: var(--tag-manual); } .tag.samples { color: var(--tag-samples); } .tag.code { color: var(--tag-code); }
+.excerpt { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.url { font-size: 12px; color: var(--muted); word-break: break-all; }
+pre.ctx { white-space: pre-wrap; font-size: 12px; background: var(--code-bg); border-radius: 6px; padding: 8px;
+  max-height: 260px; overflow: auto; }
+footer { margin-top: 28px; font-size: 12px; color: var(--muted); }
+footer a { color: var(--muted); }
+.hidden { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>imsearch — INTER-Mediator 開発者向け検索</h1>
+    <p>マニュアル・サンプル・ソースコードを根拠に回答します。日本語でも英語でも質問できます。</p>
+  </header>
+
+  <form id="f">
+    <textarea id="q" placeholder="例: 一覧から詳細ページに切り替えるには？（Ctrl/⌘+Enter で回答）" maxlength="500" required></textarea>
+    <div class="row">
+      <div class="opts">
+        <label><input type="checkbox" name="src" value="manual" checked>マニュアル</label>
+        <label><input type="checkbox" name="src" value="samples" checked>サンプル</label>
+        <label><input type="checkbox" name="src" value="code" checked>ソースコード</label>
+      </div>
+      <div class="btns">
+        <button type="button" id="btn-search" title="LLM を使わず、資料の一覧だけを表示（速い）">検索のみ</button>
+        <button type="submit" id="btn-ask" class="primary">回答を作成</button>
+        <button type="button" id="btn-stop" class="hidden">中止</button>
+      </div>
+    </div>
+  </form>
+  <div class="examples">例:
+    <a>repeat-control</a><a>検索ボックスで部分一致検索をしたい</a><a>ページの合成後に処理を実行したい</a><a>How can I send an email when a record is created?</a>
+  </div>
+
+  <div id="status" role="status" aria-live="polite"></div>
+  <div id="answer-card" class="card hidden">
+    <h2 id="answer-head">回答</h2>
+    <div id="answer" class="answer"></div>
+  </div>
+  <div id="sources-card" class="card hidden">
+    <h2 id="sources-head">参考資料</h2>
+    <ol id="sources" class="sources"></ol>
+  </div>
+
+  <footer id="footer">回答は小さな言語モデルで生成しており、誤りを含むことがあります。必ず参考資料の原典で確認してください。
+    · <a href="/api/docs">API</a> · <a href="https://github.com/msyk/imsearch-linux">GitHub</a>
+    <div id="health"></div></footer>
+</main>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const SRC_LABEL = { manual: "マニュアル", samples: "サンプル", code: "ソースコード" };
+let controller = null;
+
+// ---------- minimal, safe Markdown renderer (escape first, then a few constructs) ----------
+const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function inline(s) {
+  // s is already escaped
+  const codes = [];
+  s = s.replace(/`([^`]+)`/g, (_, c) => `\u0000${codes.push(c) - 1}\u0000`);
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  s = s.replace(/(^|[^"=>])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  s = s.replace(/\[(\d{1,2})\]/g, '<a class="cite" href="#src-$1">[$1]</a>');
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codes[+i]}</code>`);
+}
+function md(text) {
+  const out = [];
+  let list = null, para = [];
+  const flushPara = () => { if (para.length) { out.push(`<p>${inline(para.join("<br>"))}</p>`); para = []; } };
+  const flushList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  const lines = esc(text).split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const fence = line.match(/^\s*```/);
+    if (fence) {
+      flushPara(); flushList();
+      const buf = [];
+      while (++i < lines.length && !/^\s*```/.test(lines[i])) buf.push(lines[i]);
+      out.push(`<pre><code>${buf.join("\n")}</code></pre>`);
+      continue;
+    }
+    let m;
+    if ((m = line.match(/^(#{1,6})\s+(.*)$/))) {
+      flushPara(); flushList();
+      const lv = Math.min(4, m[1].length + 1);
+      out.push(`<h${lv}>${inline(m[2])}</h${lv}>`);
+    } else if ((m = line.match(/^\s*([-*•]|\d+[.)])\s+(.*)$/))) {
+      flushPara();
+      const kind = /\d/.test(m[1]) ? "ol" : "ul";
+      if (list !== kind) {
+        flushList();
+        out.push(kind === "ol" ? `<ol start="${parseInt(m[1], 10)}">` : "<ul>");
+        list = kind;
+      }
+      out.push(`<li>${inline(m[2])}</li>`);
+    } else if (!line.trim()) {
+      flushPara(); flushList();
+    } else {
+      flushList(); para.push(line);
+    }
+  }
+  flushPara(); flushList();
+  return out.join("\n");
+}
+
+// ---------- rendering ----------
+function setStatus(msg, err = false) { const s = $("#status"); s.textContent = msg || ""; s.classList.toggle("err", err); }
+function renderSources(items, head, showContent = false) {
+  $("#sources-head").textContent = head;
+  $("#sources").innerHTML = items.map((h) => `
+    <li id="src-${h.n}">
+      <div class="src-title"><span class="num">[${h.n}]</span><span class="tag ${esc(h.source)}">${SRC_LABEL[h.source] || esc(h.source)}</span>
+        <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a></div>
+      <div class="excerpt">${esc(h.excerpt)}</div>
+      <div class="url">${esc(h.url)}</div>
+      ${showContent && h.content ? `<details><summary>LLM に渡した本文</summary><pre class="ctx">${esc(h.content)}</pre></details>` : ""}
+    </li>`).join("");
+  $("#sources-card").classList.toggle("hidden", !items.length);
+}
+let pending = false;
+function scheduleRender(fn) { if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; fn(); }); } }
+
+function busy(on) {
+  $("#btn-ask").disabled = on; $("#btn-search").disabled = on;
+  $("#btn-stop").classList.toggle("hidden", !on);
+}
+function selectedSources() {
+  const all = [...document.querySelectorAll("input[name=src]")];
+  const sel = all.filter((c) => c.checked).map((c) => c.value);
+  return sel.length === all.length ? null : sel;
+}
+
+// ---------- actions ----------
+async function doSearch() {
+  const q = $("#q").value.trim(); if (!q) return;
+  const params = new URLSearchParams({ q, n: "15" });
+  (selectedSources() || []).forEach((s) => params.append("source", s));
+  busy(true); setStatus("検索中…");
+  $("#answer-card").classList.add("hidden");
+  try {
+    const r = await fetch(`/api/search?${params}`);
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    const note = d.lang === "en" ? `（日本語に翻訳して検索: ${d.query_ja}）` : "";
+    setStatus(`${d.hits.length} 件 · ${d.elapsed} 秒${note}`);
+    renderSources(d.hits, "検索結果");
+  } catch (e) { setStatus(`エラー: ${e.message}`, true); }
+  finally { busy(false); }
+}
+
+async function doAsk() {
+  const q = $("#q").value.trim(); if (!q) return;
+  controller = new AbortController();
+  busy(true); setStatus("送信中…");
+  const ans = $("#answer");
+  let text = "", ja = "", lang = "ja";
+  ans.innerHTML = ""; ans.classList.add("cursor");
+  $("#answer-card").classList.remove("hidden");
+  $("#answer-head").textContent = "回答";
+  renderSources([], "参考資料");
+  const paint = () => {
+    let html = md(text);
+    if (lang === "en" && ja) html = `<details${text ? "" : " open"}><summary>日本語の回答（翻訳前）</summary>${md(ja)}</details>` + html;
+    ans.innerHTML = html;
+  };
+  try {
+    const r = await fetch("/api/ask", {
+      method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
+      body: JSON.stringify({ q, sources: selectedSources(), show_context: true }),
+    });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || r.statusText); }
+    const reader = r.body.getReader(); const dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let k;
+      while ((k = buf.indexOf("\n\n")) >= 0) {
+        const block = buf.slice(0, k); buf = buf.slice(k + 2);
+        const ev = (block.match(/^event: (.*)$/m) || [])[1];
+        const data = JSON.parse((block.match(/^data: (.*)$/m) || [, "null"])[1]);
+        if (ev === "status") setStatus(data.message);
+        else if (ev === "meta") {
+          lang = data.lang;
+          if (lang === "en") $("#answer-head").textContent = `Answer（検索語: ${data.query_ja}）`;
+          renderSources(data.sources, lang === "en" ? "Sources（日本語の資料）" : "参考資料", true);
+        } else if (ev === "ja_token") { ja += data.t; scheduleRender(paint); }
+        else if (ev === "token") { text += data.t; scheduleRender(paint); }
+        else if (ev === "done") setStatus(`完了 · ${data.elapsed} 秒`);
+        else if (ev === "error") setStatus(data.message, true);
+      }
+    }
+  } catch (e) {
+    setStatus(e.name === "AbortError" ? "中止しました" : `エラー: ${e.message}`, e.name !== "AbortError");
+  } finally {
+    paint(); ans.classList.remove("cursor"); busy(false); controller = null;
+  }
+}
+
+$("#f").addEventListener("submit", (e) => { e.preventDefault(); doAsk(); });
+$("#btn-search").addEventListener("click", doSearch);
+$("#btn-stop").addEventListener("click", () => controller && controller.abort());
+$("#q").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); doAsk(); } });
+document.querySelectorAll(".examples a").forEach((a) => a.addEventListener("click", () => { $("#q").value = a.textContent; $("#q").focus(); }));
+
+fetch("/api/health").then((r) => r.json()).then((h) => {
+  $("#health").textContent = `索引 ${h.chunks.toLocaleString()} 件（更新 ${String(h.updated_at || "").slice(0, 10)}）· 回答 ${h.chat_model} · 埋め込み ${h.embed_model}` + (h.llm_ok ? "" : " · ⚠ LLM サーバーに接続できません");
+}).catch(() => {});
+</script>
+</body>
+</html>
