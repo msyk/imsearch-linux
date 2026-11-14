@@ -24,7 +24,7 @@ INTER-Mediator の日本語マニュアル（https://inter-mediator.info/ja/）�
 ## セットアップ
 
 ```bash
-git clone <このリポジトリ> imsearch && cd imsearch
+git clone https://github.com/msyk/imsearch-linux.git && cd imsearch-linux
 ./scripts/setup-ubuntu.sh --swap --timer
 ```
 
@@ -66,13 +66,13 @@ LLM を別のサーバーで動かす場合は `--no-ollama` を付け、`imsear
 CPU だけのマシンでは、初回の取り込み（約 5,300 チャンクの埋め込みとサンプル説明文の生成）に数時間かかります（4 CPU で埋め込みだけで約 3 時間。Mac M2 Max なら一式で約 17 分）。GPU のあるマシン（Apple Silicon の Mac など）で**同じ埋め込みモデル**を使って索引を作り、ファイルをコピーすると早く済みます。
 
 ```bash
-# Mac 側（このリポジトリを clone して）
+# Mac 側（https://github.com/msyk/imsearch-linux を clone して）
 ollama pull qwen3-embedding:0.6b && ollama pull qwen3:1.7b
 python3 -m venv .venv && .venv/bin/pip install -e .
 .venv/bin/imsearch ingest
 
 # Linux へコピー（索引とクロール・clone のキャッシュ）
-rsync -a data/ server:imsearch/data/
+rsync -a data/ server:imsearch-linux/data/
 ```
 
 索引には作成時の埋め込みモデル名が記録され、設定と食い違うとエラーで止まります（別モデルのベクトルが混ざるのを防ぐため）。サンプルの説明文は「モデル名＋プロンプト」をキーに索引内へキャッシュされるので、同じ `IMSEARCH_CHAT_MODEL` なら Linux 側の差分更新で作り直しは起きません。コピー後の差分更新は Linux 側の `ingest` やタイマーで行えます（変更分だけ埋め込むので軽い）。
@@ -142,3 +142,9 @@ deploy/
   imsearch-ingest.timer
 scripts/setup-ubuntu.sh    Ubuntu 用セットアップ
 ```
+
+## ライセンス
+
+[MIT License](LICENSE)
+
+このリポジトリには索引やクロール結果は含みません（`imsearch ingest` で各自の環境に作成します）。取り込み対象の [INTER-Mediator](https://github.com/INTER-Mediator/INTER-Mediator) と [INTER-Mediator_Samples](https://github.com/INTER-Mediator/INTER-Mediator_Samples) は MIT License、マニュアル（https://inter-mediator.info/ja/）の権利はその著作者に帰属します。作成した索引を配布・公開する場合は、それぞれの表記に従ってください。
