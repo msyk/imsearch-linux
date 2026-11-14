@@ -1,0 +1,42 @@
+# INTER-Mediator 固有用語の日英対応表（翻訳プロンプトに埋め込む）
+# 訳語の揺れを防ぐため、作者が随時追記してください。
+- ja: 定義ファイル
+  en: definition file
+- ja: ページファイル
+  en: page file
+- ja: コンテキスト
+  en: context
+- ja: エンクロージャー
+  en: enclosure
+- ja: リピーター
+  en: repeater
+- ja: ターゲット指定
+  en: target specification
+- ja: ページ合成
+  en: page construction
+- ja: 認証
+  en: authentication
+- ja: アクセス権
+  en: authorization
+- ja: ルックアップ
+  en: lookup
+- ja: 計算フィールド
+  en: calculation field
+- ja: 一覧と詳細
+  en: master-detail
+- ja: 検索条件
+  en: search criteria
+- ja: ページネーション
+  en: pagination
+- ja: 即時更新
+  en: real-time update
+- ja: メール送信
+  en: sending mail
+- ja: サーバーサイドの拡張
+  en: server-side extension
+- ja: データベースクラス
+  en: database class
+- ja: オプション設定
+  en: options
+- ja: データベース接続設定
+  en: database connection settings

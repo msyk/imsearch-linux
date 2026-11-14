@@ -1,0 +1,15 @@
+# Weekly index update. Installed by scripts/setup-ubuntu.sh (paths/user are rewritten there).
+[Unit]
+Description=imsearch: update the INTER-Mediator search index
+Wants=network-online.target ollama.service
+After=network-online.target ollama.service
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__APP_DIR__
+ExecStart=__APP_DIR__/.venv/bin/imsearch ingest
+Nice=10
+IOSchedulingClass=idle
+MemoryHigh=900M
+TimeoutStartSec=12h

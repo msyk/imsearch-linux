@@ -1,0 +1,31 @@
+# 検索評価セット（imsearch eval で Recall@k を計測）
+# q: 質問 / expect: 正解とみなす URL またはタイトルの一部（いずれかが上位 k 件に入れば正解）
+# ※ 初期値は実装者が作成した仮のもの。作者が正解を確認・追加してください（目標 30〜50 件）。
+- q: repeat-control に指定できる値は？
+  expect: for-developers/reference.html
+- q: ページの合成が終わった後に処理を実行したい
+  expect: [for-programmers/api.html, doAfterConstruct]
+- q: 一覧から詳細ページに切り替えるには？
+  expect: [practice-masterdetail, Practices/navi, naviBeforeMoveToDetail]
+- q: 検索ボックスで部分一致検索をしたい
+  expect: [practice-search, Sample_search]
+- q: メールを送信するには？
+  expect: [sendmail10, Mail_Support]
+- q: 定義ファイルをYAMLで書く方法
+  expect: for-developers/deffile.html
+- q: サーバーサイドで独自の処理を追加したい
+  expect: for-programmers/serverextending.html
+- q: パスキーでログインしたい
+  expect: Passkey
+- q: 別のテーブルの値をルックアップで取り込みたい
+  expect: for-developers/lookup.html
+- q: アプリケーションを多言語対応したい
+  expect: for-developers/localizing.html
+- q: Dockerで動かしたい
+  expect: for-developers/docker.html
+- q: IMLibContextPool.contextFromName の使い方
+  expect: [for-programmers/api.html, contextFromName]
+- q: How can I send an email when a record is created?
+  expect: [sendmail10, Mail_Support]
+- q: How do I search with a partial match from a search box?
+  expect: [practice-search, Sample_search]

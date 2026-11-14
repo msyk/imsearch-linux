@@ -1,0 +1,45 @@
+# 索引から除外するマニュアルページ（/ja/ からの相対パス）
+# 旧バージョン向けのページは含めない方針（docs/DESIGN.md §3.1）
+manual:
+  exclude_paths:
+    - for-novices/deploy.html                  # ダウンロードとインストール(Ver.5まで)
+    - for-novices/deploy6.html                 # 同(Ver.6以降) → deploy16 が後継
+    - for-novices/vm.html                      # バーチャルマシンの利用(Ver.8まで)
+    - for-developers/sendmail.html             # メール送信(Ver.5)
+    - for-developers/sendmail6.html            # メール送信(Ver.6以降) → 暫定で除外（sendmail10 が後継）
+    - for-developers/sharing5.html             # 即時更新(Ver.5)
+    - for-programmers/serverextending53.html   # サーバーサイドの拡張（Ver.5.3まで）
+    - for-programmers/serverextending54.html   # サーバーサイドの拡張（Ver.5.4以降のVer.5）
+  exclude_prefixes:
+    - tutorial_v5                              # 旧チュートリアル
+  # リンク文言にバージョン表記があるが現行版と確認済みのページ（警告を出さない）
+  confirmed_current:
+    - for-novices/deploy16.html
+    - for-developers/sendmail10.html
+    - for-developers/sharing7.html
+    - for-programmers/serverextending.html
+
+# サンプルリポジトリで除外するディレクトリ（先頭一致）
+samples:
+  exclude_prefixes:
+    - vendor/
+    - node_modules/
+    - saml-config/
+    - images/
+    - lib/css/
+    - lib/sticky-header-table/
+  # 優先度を下げて含める（検索スコアに 0.5 倍の重み）
+  low_priority_prefixes:
+    - E2E-Test/
+    - Sample_forDebugging/
+
+# 本体リポジトリ
+code:
+  include_globs:
+    - src/php/**/*.php
+    - src/js/**/*.js
+    - dist-docs/**/*.md
+    - README.md
+  low_priority_globs:
+    - spec/**/*.js
+    - spec/**/*.php
