@@ -195,6 +195,15 @@ def _meminfo() -> dict[str, int]:
             out[k] = int(v.split()[0]) // 1024
     except (OSError, ValueError):
         pass
+    try:  # container / LXC-type VPS: the cgroup limit is the real ceiling
+        cg = Path("/sys/fs/cgroup/memory.max").read_text().strip()
+        if cg != "max" and out.get("MemTotal") and int(cg) // 2**20 < out["MemTotal"]:
+            out["MemTotal"] = int(cg) // 2**20
+            # page cache (e.g. the mmapped model files) is reclaimable: count only anonymous memory
+            stat = dict(l.split() for l in Path("/sys/fs/cgroup/memory.stat").read_text().splitlines())
+            out["MemAvailable"] = max(0, out["MemTotal"] - int(stat.get("anon", 0)) // 2**20)
+    except (OSError, ValueError):
+        pass
     return out
 
 
@@ -218,10 +227,19 @@ def doctor():
     mem = _meminfo()
     if mem:
         total, avail, swap = mem.get("MemTotal", 0), mem.get("MemAvailable", 0), mem.get("SwapTotal", 0)
-        line("ok" if avail >= 2500 else "warn",
-             f"メモリ 合計 {total} MiB / 利用可能 {avail} MiB（モデル読み込み前で 2500 MiB 以上が目安）")
-        line("ok" if swap >= 1024 else "warn",
-             f"swap {swap} MiB" + ("" if swap >= 1024 else "（2GB 程度の swap を推奨。README 参照）"))
+        local = config.LLM_API == "ollama" and config.LLM_BASE_URL.startswith(("http://localhost", "http://127.0.0.1"))
+        # Ollama's peak for the chosen context size; with a remote LLM only Python/SQLite remain
+        need = (1500 if config.NUM_CTX <= 4096 else 2500) if local else 300
+        line("ok" if avail >= need else "warn",
+             f"メモリ 合計 {total} MiB / 利用可能 {avail} MiB（"
+             + (f"モデル読み込み前で {need} MiB 以上が目安）" if local else f"LLM はリモート。{need} MiB 以上が目安）"))
+        if local:  # context size and swap only matter while Ollama runs on this machine
+            big = config.NUM_CTX > 4096 or config.CONTEXT_CHARS > 3500
+            line("warn" if big and total < 3500 else "ok",
+                 f"メモリ設定 NUM_CTX={config.NUM_CTX} CONTEXT_CHARS={config.CONTEXT_CHARS} USE_MMAP={int(config.USE_MMAP)}"
+                 + ("（メモリ 4GB 未満では NUM_CTX=4096 / CONTEXT_CHARS=3500 を推奨）" if big and total < 3500 else ""))
+            line("ok" if swap >= 1024 else "warn",
+                 f"swap {swap} MiB" + ("" if swap >= 1024 else "（2GB 程度の swap を推奨。README 参照）"))
 
     con = sqlite3.connect(":memory:")
     line("ok", f"SQLite {sqlite3.sqlite_version}")
@@ -238,7 +256,8 @@ def doctor():
         line("ng", "sqlite3 が拡張の読み込みに対応していません（Ubuntu 標準の python3 を使ってください）")
 
     line("ok", f"LLM API {config.LLM_API} @ {config.LLM_BASE_URL}  chat={config.CHAT_MODEL}  "
-               f"embed={config.EMBED_MODEL}  num_ctx={config.NUM_CTX}")
+               f"embed={config.EMBED_MODEL}  "
+               + (f"num_ctx={config.NUM_CTX}" if config.LLM_API == "ollama" else f"max_tokens={config.NUM_PREDICT}"))
     try:
         tags = llm.ollama_tags() if config.LLM_API == "ollama" else None
     except Exception as e:
@@ -254,6 +273,17 @@ def doctor():
         for m in llm.ollama_ps():
             line("ok", f"読み込み中: {m.get('name')} {m.get('size', 0) / 2**20:.0f} MiB "
                        f"(context {m.get('context_length', '?')})")
+    if config.LLM_API != "ollama":
+        if not config.LLM_API_KEY:
+            line("warn", "IMSEARCH_LLM_API_KEY が空です")
+        try:
+            names = set(llm.remote_models())
+            for m in (config.CHAT_MODEL, config.EMBED_MODEL):
+                line("ok" if m in names else "ng",
+                     f"モデル {m}" + ("" if m in names else f" が {config.LLM_BASE_URL} にありません"
+                                                           f"（利用可能: {', '.join(sorted(names))[:300]}）"))
+        except Exception as e:
+            line("ng", f"LLM API に接続できません: {e}")
 
     if config.DB_PATH.exists():
         try:

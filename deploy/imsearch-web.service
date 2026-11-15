@@ -11,8 +11,9 @@ ExecStart=__APP_DIR__/.venv/bin/imsearch serve
 Restart=on-failure
 RestartSec=5
 # the app itself is small (models live in Ollama); keep it from eating into Ollama's share
-MemoryHigh=400M
-MemoryMax=600M
+# measured peak ~90MB
+MemoryHigh=200M
+MemoryMax=300M
 NoNewPrivileges=true
 ProtectSystem=full
 PrivateTmp=true

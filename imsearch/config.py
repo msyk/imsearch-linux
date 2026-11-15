@@ -1,9 +1,11 @@
 """Paths and settings. Every setting can be overridden by an IMSEARCH_* env var.
 
-Defaults target a small Linux server (Ubuntu, 4GB RAM, CPU only):
+Defaults target a small Linux server (Ubuntu, 2GB RAM, CPU only, local Ollama):
   - chat:  qwen3:1.7b            (~1.4GB, Q4_K_M)
   - embed: qwen3-embedding:0.6b  (~0.6GB, 1024 dim, multilingual)
   - small LLM context window / fewer context chunks / small embedding batches
+imsearch.env.example has blocks for 4GB machines and for a remote OpenAI-compatible API
+(さくらの AI Engine: gpt-oss-120b + multilingual-e5-large; then 1GB RAM is enough).
 Variables can also be put in `imsearch.env` (KEY=VALUE lines) in the project root
 or in the file named by IMSEARCH_ENV_FILE; real environment variables win.
 """
@@ -76,14 +78,24 @@ LLM_API_KEY = _env("LLM_API_KEY", "")
 CHAT_MODEL = _env("CHAT_MODEL", "qwen3:1.7b")
 EMBED_MODEL = _env("EMBED_MODEL", "qwen3-embedding:0.6b")
 EMBED_DIM = _int("EMBED_DIM", 1024)
-# Embedding models such as qwen3-embedding want an instruction on the *query* side only.
-# "auto" picks one by model name; set to "" to disable or to your own text.
+# Embedding models such as qwen3-embedding want an instruction on the *query* side only;
+# multilingual-e5 wants "query: " / "passage: " on both sides.
+# "auto" picks them by model name; set to "" to disable or to your own text.
 EMBED_QUERY_PREFIX = _env("EMBED_QUERY_PREFIX", "auto")
+EMBED_DOC_PREFIX = _env("EMBED_DOC_PREFIX", "auto")
+# OpenAI-compatible servers only: reasoning models (gpt-oss etc.) spend part of max_tokens on
+# hidden reasoning; "low" keeps answers fast. Empty = do not send the parameter.
+REASONING_EFFORT = _env("REASONING_EFFORT", "")
 
-# Memory knobs (4GB RAM: keep the KV cache and request sizes small)
-NUM_CTX = _int("NUM_CTX", 8192)            # chat context window (tokens)
+# Memory knobs. Defaults fit a 2GB RAM machine (one model in RAM at a time, measured peak
+# ~1.4GB for Ollama); with 4GB+ raise NUM_CTX/CONTEXT_CHARS (see imsearch.env.example).
+NUM_CTX = _int("NUM_CTX", 4096)            # chat context window (tokens): the KV cache grows with it
+NUM_PREDICT = _int("NUM_PREDICT", 1024)    # max answer tokens (prompt + answer must fit NUM_CTX)
+# Map the model file instead of copying it into RAM: ~280MB less anonymous memory on a 1.7B
+# model and no slower (pages stay in the file cache and can be dropped under pressure).
+USE_MMAP = _bool("USE_MMAP", True)
 EMBED_NUM_CTX = _int("EMBED_NUM_CTX", 2048)
-EMBED_BATCH = _int("EMBED_BATCH", 8)       # texts per embedding request during ingest
+EMBED_BATCH = _int("EMBED_BATCH", 4)       # texts per embedding request during ingest
 EMBED_MAX_CHARS = _int("EMBED_MAX_CHARS", 2000)
 # CPU threads for Ollama. 0 = auto: use the CPUs actually available to this machine/container
 # (cgroup CPU quota / affinity). Without this, llama.cpp may start one thread per host core
@@ -95,10 +107,10 @@ LLM_TIMEOUT = float(_env("LLM_TIMEOUT", "900"))  # CPU inference is slow; be pat
 # Retrieval
 RRF_K = 60
 CANDIDATES = _int("CANDIDATES", 30)          # per retriever
-CONTEXT_CHUNKS = _int("CONTEXT_CHUNKS", 5)   # chunks passed to the answer LLM
-CONTEXT_CHARS = _int("CONTEXT_CHARS", 7000)  # total characters of those chunks (must fit NUM_CTX)
-PREREQ_KEYS = _int("PREREQ_KEYS", 4)        # manual explanations of a hit sample's settings (0 = off)
-PREREQ_CHARS = _int("PREREQ_CHARS", 2000)   # part of CONTEXT_CHARS reserved for them
+CONTEXT_CHUNKS = _int("CONTEXT_CHUNKS", 4)   # chunks passed to the answer LLM
+CONTEXT_CHARS = _int("CONTEXT_CHARS", 3500)  # total characters of those chunks (~2.5K tokens with the prompt; must fit NUM_CTX)
+PREREQ_KEYS = _int("PREREQ_KEYS", 3)        # manual explanations of a hit sample's settings (0 = off)
+PREREQ_CHARS = _int("PREREQ_CHARS", 1000)   # part of CONTEXT_CHARS reserved for them
 # Run the LLM query analysis for Japanese questions too (English ones are always translated).
 # Off by default: on CPU it costs several seconds and small models add little.
 ANALYZE_JA = _bool("ANALYZE_JA", False)
@@ -111,12 +123,12 @@ DESCRIBE_PAGE_CHARS = _int("DESCRIBE_PAGE_CHARS", 1500)
 # Web server (imsearch serve)
 WEB_HOST = _env("WEB_HOST", "127.0.0.1")   # put nginx etc. in front to publish it
 WEB_PORT = _int("WEB_PORT", 8000)
-WEB_CONCURRENCY = _int("WEB_CONCURRENCY", 1)  # answers generated at the same time (1 for 4GB RAM)
-WEB_MAX_QUEUE = _int("WEB_MAX_QUEUE", 3)      # waiting answers; more requests get "busy"
+WEB_CONCURRENCY = _int("WEB_CONCURRENCY", 1)  # answers generated at the same time (1 for 2-4GB RAM)
+WEB_MAX_QUEUE = _int("WEB_MAX_QUEUE", 2)      # waiting answers; more requests get "busy"
 WEB_MAX_QUESTION = _int("WEB_MAX_QUESTION", 500)  # characters
 
 # SQLite page cache (KiB). Small on purpose; the OS file cache does the rest.
-SQLITE_CACHE_KB = _int("SQLITE_CACHE_KB", 16384)
+SQLITE_CACHE_KB = _int("SQLITE_CACHE_KB", 8192)
 
 
 def _available_cpus() -> int | None:
@@ -151,7 +163,15 @@ def embed_query_prefix() -> str:
     if m.startswith("qwen3-embedding"):
         return ("Instruct: Given a question from a developer, retrieve relevant documentation, "
                 "sample code or source code of the INTER-Mediator web framework\nQuery: ")
+    if "e5" in m:
+        return "query: "
     return ""
+
+
+def embed_doc_prefix() -> str:
+    if EMBED_DOC_PREFIX != "auto":
+        return EMBED_DOC_PREFIX
+    return "passage: " if "e5" in EMBED_MODEL.lower() else ""
 
 
 @lru_cache

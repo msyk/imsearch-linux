@@ -1,18 +1,18 @@
 # imsearch — INTER-Mediator 開発者向け検索（ローカル RAG・省メモリ版）
 
-INTER-Mediator の日本語マニュアル（https://inter-mediator.info/ja/）、本体のソースコード、サンプルアプリ（INTER-Mediator_Samples）を情報源にして検索し、Ollama 上の LLM で回答を作ります。
+INTER-Mediator の日本語マニュアル（https://inter-mediator.info/ja/）、本体のソースコード、サンプルアプリ（INTER-Mediator_Samples）を情報源にして検索し、Ollama 上の LLM（またはさくらのクラウドの「さくらの AI Engine」）で回答を作ります。
 
-これは testdev1 の imsearch（Mac・64GB 向け）と同じ機能・同じコマンドを、**メモリ 4GB・GPU なしの Ubuntu Linux** で動くように調整した版です。設計の全体像は [docs/DESIGN.md](docs/DESIGN.md)、Mac 版からの変更点は [docs/LOWMEM.md](docs/LOWMEM.md) を参照してください。
+これは Mac（64GB）向けに作った imsearch と同じ機能・同じコマンドを、**メモリ 2GB・GPU なしの Ubuntu Linux** で動くように調整した版です（メモリ 4GB 以上なら回答に使う資料を増やす設定に自動で切り替わります）。LLM を「さくらの AI Engine」の API に任せれば、**メモリ 1GB** でも動きます（[後述](#llm-をさくらの-ai-engine-で使うメモリ-1gb)）。設計の全体像は [docs/DESIGN.md](docs/DESIGN.md)、Mac 版からの変更点は [docs/LOWMEM.md](docs/LOWMEM.md) を参照してください。
 
 ## 動作環境
 
 | 項目 | 内容 |
 |---|---|
 | OS | Ubuntu 22.04 / 24.04（x86_64・arm64） |
-| メモリ | 4GB（swap 2GB を推奨） |
+| メモリ | 2GB 以上（2GB 機では swap 2GB が必要。セットアップが自動で作成）。AI Engine を使うなら 1GB |
 | ディスク | 空き 5GB 程度（モデル 2.1GB、リポジトリ・索引 約 0.2GB） |
 | Python | 3.10 以上（Ubuntu 標準の python3） |
-| LLM | Ollama（CPU のみで可） |
+| LLM | Ollama（CPU のみで可）、または OpenAI 互換 API（さくらの AI Engine） |
 
 既定のモデル:
 
@@ -25,21 +25,22 @@ INTER-Mediator の日本語マニュアル（https://inter-mediator.info/ja/）�
 
 ```bash
 git clone https://github.com/msyk/imsearch-linux.git && cd imsearch-linux
-./scripts/setup-ubuntu.sh --swap --timer --web
+./scripts/setup-ubuntu.sh --timer --web
 ```
 
 スクリプトは次を行います（sudo を使います）。
 
 1. `python3-venv` `git` `curl` を apt で導入
-2. `--swap`: swap が無ければ 2GB の `/swapfile` を作成（`vm.swappiness=10`）
-3. Ollama を公式インストーラーで導入し、4GB 向けの設定（[deploy/ollama-override.conf](deploy/ollama-override.conf)）を systemd に適用
-4. モデル 2 つを `ollama pull`
-5. `.venv` を作って imsearch をインストールし、`imsearch.env` を作成
-6. `--timer`: 毎週日曜 3 時の索引更新（systemd timer）を登録
-7. `--web`: Web アプリを systemd サービス（`imsearch-web`）として常駐
-8. `imsearch doctor` で診断
+2. 搭載メモリからメモリ設定を決める（3.5GB 未満 → `2g`、以上 → `4g`。`--profile 2g|4g|api` で指定も可。1.8GB 未満では `--profile api` の指定を求めて止まる）
+3. swap（メモリ 3GB 未満で `api` 以外、または `--swap`）: swap が無ければ 2GB の `/swapfile` を作成（`vm.swappiness=10`。`--no-swap` で作らない）
+4. Ollama を公式インストーラーで導入し、メモリ設定に合わせた設定（[deploy/ollama-override.conf](deploy/ollama-override.conf)）を systemd に適用
+5. モデル 2 つを `ollama pull`
+6. `.venv` を作って imsearch をインストールし、`imsearch.env` を作成（`4g` では 4GB 向けの値を有効にする）
+7. `--timer`: 毎週日曜 3 時の索引更新（systemd timer）を登録
+8. `--web`: Web アプリを systemd サービス（`imsearch-web`）として常駐
+9. `imsearch doctor` で診断
 
-LLM を別のサーバーで動かす場合は `--no-ollama` を付け、`imsearch.env` の `IMSEARCH_LLM_BASE_URL` などを設定します。
+`--profile api` では 3〜5 を行わず、AI Engine 用の `imsearch.env` を作ります（[後述](#llm-をさくらの-ai-engine-で使うメモリ-1gb)）。その他の LLM サーバーを使う場合は `--no-ollama` を付け、`imsearch.env` の `IMSEARCH_LLM_BASE_URL` などを設定します。
 
 ## 使い方
 
@@ -79,7 +80,7 @@ LLM を別のサーバーで動かす場合は `--no-ollama` を付け、`imsear
 | `GET /api/health` | 索引の件数・モデル・混雑状況 |
 | `GET /api/docs` | API ドキュメント（OpenAPI） |
 
-メモリ 4GB 向けに、回答の生成は同時に 1 件だけ行い、後続は 3 件まで順番待ちにします。それを超える要求には「混み合っています」と返します（`IMSEARCH_WEB_CONCURRENCY`、`IMSEARCH_WEB_MAX_QUEUE`）。ブラウザを閉じたり「中止」を押したりすると、Ollama 側の生成も止まります。
+省メモリのため、回答の生成は同時に 1 件だけ行い、後続は 2 件まで順番待ちにします。それを超える要求には「混み合っています」と返します（`IMSEARCH_WEB_CONCURRENCY`、`IMSEARCH_WEB_MAX_QUEUE`）。ブラウザを閉じたり「中止」を押したりすると、Ollama 側の生成も止まります。
 
 ### インターネットに公開する
 
@@ -101,25 +102,37 @@ rsync -a data/ server:imsearch-linux/data/
 
 索引には作成時の埋め込みモデル名が記録され、設定と食い違うとエラーで止まります（別モデルのベクトルが混ざるのを防ぐため）。サンプルの説明文は「モデル名＋プロンプト」をキーに索引内へキャッシュされるので、同じ `IMSEARCH_CHAT_MODEL` なら Linux 側の差分更新で作り直しは起きません。コピー後の差分更新は Linux 側の `ingest` やタイマーで行えます（変更分だけ埋め込むので軽い）。
 
-## メモリ 4GB での運用
+## メモリ 2GB での運用
 
-おおよその内訳（Ollama の設定は [deploy/ollama-override.conf](deploy/ollama-override.conf)）:
+既定値はメモリ 2GB 向けです。モデルは同時に 1 つだけ RAM に置き（`OLLAMA_MAX_LOADED_MODELS=1`）、検索時は埋め込みモデル、回答時は回答用モデルに切り替えます（ファイルキャッシュからの再読み込みで約 2 秒）。
 
-| 項目 | 目安 |
-|---|---|
-| OS・sshd など | 0.3〜0.5GB |
-| `qwen3:1.7b`（重み＋KV キャッシュ 8K/q8_0。`ollama ps` で 2.0GB） | 約 2.0GB |
-| `qwen3-embedding:0.6b`（`ollama ps` で 0.9GB） | 約 0.9GB |
-| imsearch（Python・SQLite） | 0.1〜0.2GB |
+| 項目 | 2GB（既定、`2g`） | 4GB 以上（`4g`） |
+|---|---|---|
+| 同時に置くモデル | 1 | 2 |
+| 回答のコンテキスト長 `NUM_CTX` | 4096 | 8192 |
+| LLM に渡す資料 | 4 件・3,500 字 | 5 件・7,000 字 |
+| 前提の設定の説明 | 3 件・1,000 字 | 4 件・2,000 字 |
+| モデルの読み込み | メモリマップ（`IMSEARCH_USE_MMAP=1`） | 同左 |
+| Ollama の上限（systemd） | `MemoryHigh=1600M` / `MemoryMax=1800M` | `3000M` / `3500M` |
+| Web アプリの上限（systemd） | `MemoryHigh=200M` / `MemoryMax=300M` | 同左 |
 
-4GB に制限した Ubuntu 24.04 コンテナで、両モデルを載せた状態の `ask` がピーク 2.8GB で動くことを確認しています（[docs/LOWMEM.md](docs/LOWMEM.md) §5）。回答には CPU で 1.5〜2.5 分かかります。検索だけ（`search`）なら約 1 秒です。
+2GB・2 CPU に制限した Ubuntu 24.04 コンテナでの実測（[docs/LOWMEM.md](docs/LOWMEM.md) §8）:
+
+| 処理 | 時間 | メモリ（コンテナ全体の匿名メモリのピーク） |
+|---|---|---|
+| `search` | 約 1〜2 秒 | 0.7GB（埋め込みモデル 0.7GB） |
+| `ask`（日本語・英語） | 約 1〜1.5 分 | 1.4〜1.6GB（回答用モデル＋Python） |
+| Web アプリの回答 | 約 1 分 | 1.6GB（Ollama＋Web アプリ 90MB） |
+
+OS・sshd などの 0.3〜0.4GB を足すと 2GB ぎりぎりなので、2GB 機では swap 2GB を付けてください（セットアップが自動で作成します）。
 
 足りないときの対処（上から順に効果が大きい）:
 
-1. swap を 2GB 付ける（`setup-ubuntu.sh --swap`）。モデルの一時的な読み込みピークを吸収します。
-2. `imsearch.env` で `IMSEARCH_NUM_CTX=4096`、`IMSEARCH_CONTEXT_CHARS=3500` に下げる。
-3. Ollama の `OLLAMA_MAX_LOADED_MODELS=1` にする（モデルを同時に 1 つだけ置く。切り替えの数秒が毎回かかる）。
-4. `IMSEARCH_KEEP_ALIVE=0` にする（使い終わったらすぐ解放）。
+1. `imsearch.env` で `IMSEARCH_NUM_CTX=3072`、`IMSEARCH_CONTEXT_CHARS=2500` に下げる。
+2. `IMSEARCH_KEEP_ALIVE=0` にする（使い終わったらすぐ解放。毎回の読み込みに数秒かかる）。
+3. 回答用モデルを `IMSEARCH_CHAT_MODEL=qwen3:0.6b` にする（約 0.5GB。未検証で、日本語の回答の質は下がる見込み）。
+
+メモリ 4GB 以上の機械では、セットアップが `4g` を選び、回答に使う資料を増やします。手で切り替える場合は [imsearch.env.example](imsearch.env.example) 末尾の「メモリ 4GB 以上のとき」の行を有効にし、Ollama の設定を `OLLAMA_MAX_LOADED_MODELS=2`、`MemoryHigh=3000M`、`MemoryMax=3500M` に変えます。
 
 逆に余裕がある（swap 込みで 6GB 以上、あるいは 8GB 機）なら、回答品質を上げるために `IMSEARCH_CHAT_MODEL=qwen3:4b`（約 2.5GB）を使えます。LLM を GPU サーバーや外部 API に置く場合は次の変数で切り替えます。
 
@@ -127,19 +140,66 @@ rsync -a data/ server:imsearch-linux/data/
 |---|---|
 | `IMSEARCH_LLM_API` | `ollama`（`openai` で OpenAI 互換 API） |
 | `IMSEARCH_LLM_BASE_URL` | `http://localhost:11434` |
+| `IMSEARCH_LLM_API_KEY` | 空（OpenAI 互換 API の Bearer トークン） |
 | `IMSEARCH_CHAT_MODEL` | `qwen3:1.7b` |
 | `IMSEARCH_EMBED_MODEL` | `qwen3-embedding:0.6b` |
-| `IMSEARCH_NUM_CTX` | `8192` |
-| `IMSEARCH_CONTEXT_CHUNKS` / `IMSEARCH_CONTEXT_CHARS` | `5` / `7000` |
-| `IMSEARCH_PREREQ_KEYS` / `IMSEARCH_PREREQ_CHARS` | `4` / `2000`（前提の設定の説明を加える数と文字数。`0` で無効） |
+| `IMSEARCH_NUM_CTX` / `IMSEARCH_NUM_PREDICT` | `4096` / `1024`（4GB: `8192`。`NUM_PREDICT` は API の `max_tokens` にも使う） |
+| `IMSEARCH_REASONING_EFFORT` | 空（OpenAI 互換 API で推論モデルに `reasoning_effort` を送る。例: `low`） |
+| `IMSEARCH_EMBED_QUERY_PREFIX` / `IMSEARCH_EMBED_DOC_PREFIX` | `auto`（モデル名から決める。e5 なら `query: ` / `passage: `） |
+| `IMSEARCH_EMBED_MAX_CHARS` / `IMSEARCH_EMBED_BATCH` | `2000` / `4`（埋め込む文字数の上限と、1 リクエストの件数） |
+| `IMSEARCH_USE_MMAP` | `1`（モデルをメモリマップで読む） |
+| `IMSEARCH_CONTEXT_CHUNKS` / `IMSEARCH_CONTEXT_CHARS` | `4` / `3500`（4GB: `5` / `7000`） |
+| `IMSEARCH_PREREQ_KEYS` / `IMSEARCH_PREREQ_CHARS` | `3` / `1000`（前提の設定の説明を加える数と文字数。`0` で無効。4GB: `4` / `2000`） |
 | `IMSEARCH_ANALYZE_JA` | `0`（`1` で日本語の質問にも LLM のクエリ解析を使う） |
 | `IMSEARCH_ANALYZE_MODE` | `simple`（`json` で Mac 版と同じ JSON 解析。大きいモデル向け） |
 | `IMSEARCH_NUM_THREAD` | `0`（自動。コンテナ等の CPU 制限を検出） |
 | `IMSEARCH_WEB_HOST` / `IMSEARCH_WEB_PORT` | `127.0.0.1` / `8000` |
-| `IMSEARCH_WEB_CONCURRENCY` / `IMSEARCH_WEB_MAX_QUEUE` | `1` / `3` |
+| `IMSEARCH_WEB_CONCURRENCY` / `IMSEARCH_WEB_MAX_QUEUE` | `1` / `2` |
 | `IMSEARCH_DB` | `data/imsearch.db` |
 
 全項目は [imsearch.env.example](imsearch.env.example) にあります。
+
+## LLM をさくらの AI Engine で使う（メモリ 1GB）
+
+回答生成と埋め込みを、さくらのクラウドの「さくらの AI Engine」（OpenAI 互換 API）に任せる構成です。手元では Python・SQLite・Web アプリだけが動くので、メモリ 1GB の VPS でも動きます。Ollama もモデルのダウンロードも不要です。
+
+| 用途 | モデル |
+|---|---|
+| 回答生成・翻訳 | `gpt-oss-120b`（推論モデル。`reasoning_effort=low` で使用） |
+| 埋め込み | `multilingual-e5-large`（1024 次元・入力 512 トークンまで） |
+
+```bash
+./scripts/setup-ubuntu.sh --profile api --timer --web
+# imsearch.env の IMSEARCH_LLM_API_KEY= に、コントロールパネルで作ったアカウントトークン（<UUID>:<シークレット>）を書く
+.venv/bin/imsearch doctor     # 接続とモデル名を確認（利用回数は消費しない）
+.venv/bin/imsearch ingest     # 索引の作成（約 5 分）
+```
+
+埋め込みモデルが Ollama 版と違うため、索引は作り直しが必要です（Ollama 版の索引はコピーできません）。既存の Ollama 版の索引を残したまま試すなら、`IMSEARCH_ENV_FILE` で別の設定ファイルを指定し、その中で `IMSEARCH_DB=./data/imsearch-e5.db` のように別の索引ファイルにします。
+
+1GB・1 CPU に制限した Ubuntu 24.04 コンテナでの実測（[docs/LOWMEM.md](docs/LOWMEM.md) §9）:
+
+| 処理 | 時間 | メモリ（匿名メモリのピーク） |
+|---|---|---|
+| `ingest`（全件、Mac 上） | 約 4.5 分 | 130MB |
+| `search` | 約 1 秒 | 41MB |
+| `ask`（日本語・英語） | 約 10〜12 秒 | 45MB |
+| Web アプリで 2 件同時に回答 | 約 10 秒 | 68MB（Web アプリを含む） |
+
+API の利用回数の目安（無料枠は 2026 年 11 月時点で、月にチャット 3,000 回・埋め込み 10,000 回）:
+
+| 処理 | チャット | 埋め込み |
+|---|---|---|
+| 索引の作成（全件） | 128 回（サンプルの説明文） | 約 170 回 |
+| 索引の差分更新 | 変わったサンプルの数だけ | 変わったチャンク 32 件ごとに 1 回 |
+| 日本語の質問 | 1 回 | 1 回 |
+| 英語の質問 | 3 回（質問と回答の翻訳を含む） | 1 回 |
+| 検索のみ | 0 回 | 1 回 |
+
+- 混雑や上限で 429・503 が返ったときは、回答の表示を始める前なら数秒おいて自動で再試行します。
+- e5 は 512 トークンを超える入力を拒否します。日本語 800 字（`IMSEARCH_EMBED_MAX_CHARS=800`）でほぼ収まり、超えたものは自動で短くして送り直します。
+- 推論モデルは考える過程にも `max_tokens` を使うので、`IMSEARCH_NUM_PREDICT=4096` にしています。それでも回答が途中で切れたときは、その旨を表示します。
+- 回答に使う資料は 8 件・16,000 字（4GB 版の 2 倍強）、回答の同時生成は 2 件です。
 
 ## 設定ファイル
 
@@ -166,7 +226,7 @@ imsearch/
   web.py            Web アプリ・HTTP API（FastAPI、回答は SSE で逐次送信）
   static/index.html ブラウザ UI
 deploy/
-  ollama-override.conf     Ollama の 4GB 向け systemd 設定
+  ollama-override.conf     Ollama の systemd 設定（2GB 向け。4GB ではセットアップが値を変えて適用）
   imsearch-ingest.service  週 1 回の索引更新（timer から起動）
   imsearch-ingest.timer
   imsearch-web.service     Web アプリの常駐

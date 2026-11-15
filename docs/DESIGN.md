@@ -236,7 +236,7 @@ CREATE VIRTUAL TABLE chunks_vec USING vec0(embedding float[1024]);  -- bge-m3
 ## 10. ディレクトリ構成（案）
 
 ```
-testdev1/
+imsearch-linux/
 ├── pyproject.toml
 ├── docs/DESIGN.md
 ├── imsearch/
