@@ -63,6 +63,7 @@ ol.sources li:target { background: var(--accent-weak); border-radius: 6px; }
 .tag { display: inline-block; font-size: 11px; border: 1px solid currentColor; border-radius: 99px; padding: 0 7px;
   margin-right: 6px; line-height: 1.6; vertical-align: 1px; }
 .tag.manual { color: var(--tag-manual); } .tag.samples { color: var(--tag-samples); } .tag.code { color: var(--tag-code); }
+.tag.prereq { color: var(--muted); border-style: dashed; }
 .excerpt { color: var(--muted); font-size: 13px; margin-top: 2px; }
 .url { font-size: 12px; color: var(--muted); word-break: break-all; }
 pre.ctx { white-space: pre-wrap; font-size: 12px; background: var(--code-bg); border-radius: 6px; padding: 8px;
@@ -177,7 +178,7 @@ function renderSources(items, head, showContent = false) {
   $("#sources-head").textContent = head;
   $("#sources").innerHTML = items.map((h) => `
     <li id="src-${h.n}">
-      <div class="src-title"><span class="num">[${h.n}]</span><span class="tag ${esc(h.source)}">${SRC_LABEL[h.source] || esc(h.source)}</span>
+      <div class="src-title"><span class="num">[${h.n}]</span><span class="tag ${esc(h.source)}">${SRC_LABEL[h.source] || esc(h.source)}</span>${(h.via || []).includes("prereq") ? `<span class="tag prereq" title="上位のサンプルが使っている設定の説明">前提の設定</span>` : ""}
         <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a></div>
       <div class="excerpt">${esc(h.excerpt)}</div>
       <div class="url">${esc(h.url)}</div>

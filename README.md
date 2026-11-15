@@ -131,6 +131,7 @@ rsync -a data/ server:imsearch-linux/data/
 | `IMSEARCH_EMBED_MODEL` | `qwen3-embedding:0.6b` |
 | `IMSEARCH_NUM_CTX` | `8192` |
 | `IMSEARCH_CONTEXT_CHUNKS` / `IMSEARCH_CONTEXT_CHARS` | `5` / `7000` |
+| `IMSEARCH_PREREQ_KEYS` / `IMSEARCH_PREREQ_CHARS` | `4` / `2000`（前提の設定の説明を加える数と文字数。`0` で無効） |
 | `IMSEARCH_ANALYZE_JA` | `0`（`1` で日本語の質問にも LLM のクエリ解析を使う） |
 | `IMSEARCH_ANALYZE_MODE` | `simple`（`json` で Mac 版と同じ JSON 解析。大きいモデル向け） |
 | `IMSEARCH_NUM_THREAD` | `0`（自動。コンテナ等の CPU 制限を検出） |
@@ -145,8 +146,8 @@ rsync -a data/ server:imsearch-linux/data/
 | ファイル | 内容 |
 |---|---|
 | `imsearch.env` | 上記の環境設定（`imsearch.env.example` をコピー） |
-| `config/exclude.yaml` | 除外するマニュアルページ（旧バージョン）、サンプル・コードの対象範囲 |
-| `config/glossary.yaml` | 日英用語集（英語の質問の翻訳と回答の英訳に使う） |
+| `config/exclude.yaml` | 除外するマニュアルページ（旧バージョン）、ページタイトルの上書き、サンプル・コードの対象範囲 |
+| `config/glossary.yaml` | 日英用語集（英語の質問の翻訳と回答の英訳、日本語の質問への英語の検索語の追加に使う） |
 | `eval/questions.yaml` | 検索精度の評価セット |
 
 ## 構成

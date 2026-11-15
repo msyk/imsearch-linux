@@ -18,6 +18,9 @@ manual:
     - for-developers/sendmail10.html
     - for-developers/sharing7.html
     - for-programmers/serverextending.html
+  # ページのタイトルの上書き（リンク文言が「こちらのページ」しかなく、<title> もないページ）
+  titles:
+    for-developers/auth.html: 認証とアクセス権の設定
 
 # サンプルリポジトリで除外するディレクトリ（先頭一致）
 samples:

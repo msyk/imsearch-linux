@@ -7,11 +7,23 @@ from typing import Iterator
 
 from . import config, llm
 from .chunk import cjk_ratio, identifiers
-from .retrieve import Hit, hybrid, select_context
+from .retrieve import Hit, hybrid, prerequisites, select_context
 
 
 def _glossary_text() -> str:
     return "\n".join(f"- {g['ja']} = {g['en']}" for g in config.glossary())
+
+
+def glossary_terms(text: str) -> list[str]:
+    """English terms for the glossary words found in a Japanese question ("パスキー" -> "passkey").
+    The source code, sample paths and English identifiers are written in English, so a Japanese
+    question reaches them only through these terms (no LLM call: instant on a CPU-only box)."""
+    out = []
+    for g in config.glossary():
+        ja, en = str(g.get("ja") or ""), str(g.get("en") or "")
+        if ja and en and ja in text:
+            out.append(en)
+    return list(dict.fromkeys(out))
 
 
 def detect_lang(text: str) -> str:
@@ -84,6 +96,8 @@ def analyze(question: str, use_llm: bool = True) -> Query:
     """
     lang = detect_lang(question)
     q = Query(original=question, lang=lang, ja_query=question, identifiers=identifiers(question))
+    if lang == "ja":
+        q.keywords = glossary_terms(question)
     if not use_llm and lang == "ja":
         return q
     if config.ANALYZE_MODE != "json":
@@ -96,24 +110,33 @@ def analyze(question: str, use_llm: bool = True) -> Query:
     data = llm.chat_json([{"role": "user", "content": ANALYZE_PROMPT.format(
         glossary=_glossary_text(), question=question)}])
     q.ja_query = str(data.get("ja_query") or question)
-    q.keywords = [str(k) for k in data.get("keywords") or [] if k][:8]
+    q.keywords = list(dict.fromkeys(q.keywords + [str(k) for k in data.get("keywords") or [] if k][:8]))
     llm_ids = [str(i) for i in data.get("identifiers") or [] if i][:5]
     q.identifiers = list(dict.fromkeys(q.identifiers + llm_ids))
     return q
-    data = llm.chat_json([{"role": "user", "content": ANALYZE_PROMPT.format(
-        glossary=_glossary_text(), question=question)}])
-    q.ja_query = str(data.get("ja_query") or question)
-    q.keywords = [str(k) for k in data.get("keywords") or [] if k][:8]
-    llm_ids = [str(i) for i in data.get("identifiers") or [] if i][:5]
-    q.identifiers = list(dict.fromkeys(q.identifiers + llm_ids))
-    return q
+
+
+def _vector_query(q: Query) -> str:
+    """A short Japanese question embeds poorly ("パスキー" lands on generic overview pages);
+    the glossary's English terms anchor it to the code and samples that use those words."""
+    if q.lang == "ja" and q.keywords:
+        return f"{q.ja_query} ({', '.join(q.keywords)})"
+    return q.ja_query
+
+
+def _hybrid(con: sqlite3.Connection, q: Query, limit: int, sources: list[str] | None) -> list[Hit]:
+    return hybrid(con, q.ja_query, q.identifiers, q.keywords, limit=limit, sources=sources,
+                  vector_query=_vector_query(q))
 
 
 def search(con: sqlite3.Connection, question: str, limit: int = 10, expand: bool = False,
            sources: list[str] | None = None) -> tuple[Query, list[Hit]]:
     q = analyze(question, use_llm=expand)
-    hits = hybrid(con, q.ja_query, q.identifiers, q.keywords, limit=max(limit, 20), sources=sources)
-    return q, hits[:limit]
+    hits = _hybrid(con, q, max(limit, 20), sources)
+    pre = prerequisites(con, hits) if not sources or "manual" in sources else []
+    top = hits[:limit]
+    ids = {h.id for h in top}
+    return q, top + [p for p in pre if p.id not in ids]  # appended after the ranked hits
 
 
 SYSTEM_PROMPT = """あなたは Webアプリケーションフレームワーク INTER-Mediator のアプリケーション開発者を支援するアシスタントです。
@@ -172,6 +195,6 @@ def translate_to_en(text: str) -> Iterator[str]:
 def ask(con: sqlite3.Connection, question: str, sources: list[str] | None = None):
     """Returns (query, context_hits, token_stream_ja). Caller handles EN back-translation."""
     q = analyze(question, use_llm=config.ANALYZE_JA)
-    hits = hybrid(con, q.ja_query, q.identifiers, q.keywords, limit=30, sources=sources)
+    hits = _hybrid(con, q, 30, sources)
     ctx = select_context(con, hits)
     return q, ctx, answer_stream(q.ja_query if q.lang == "en" else question, ctx)

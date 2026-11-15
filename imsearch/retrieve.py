@@ -74,14 +74,19 @@ def vector_search(con: sqlite3.Connection, text: str, k: int) -> list[int]:
 
 def hybrid(con: sqlite3.Connection, query: str, identifiers: list[str] | None = None,
            extra_keywords: list[str] | None = None, limit: int = 20,
-           sources: list[str] | None = None) -> list[Hit]:
+           sources: list[str] | None = None, vector_query: str | None = None) -> list[Hit]:
     k = config.CANDIDATES
     kw_text = " ".join([query] + (extra_keywords or []) + (identifiers or []))
     rankings = {
         "bm25": (keyword_search(con, kw_text, k), 1.0),
-        "vector": (vector_search(con, query, k), 1.0),
+        "vector": (vector_search(con, vector_query or query, k), 1.0),
         "symbol": (symbol_search(con, identifiers or [], k), 1.5),
     }
+    if extra_keywords:
+        # The added terms (English glossary words for a Japanese question, the English original of a
+        # translated one) get a ranking of their own: mixed into one OR query they are outweighed
+        # by common katakana bigrams ("パスキー" -> パス / キー match every password page).
+        rankings["terms"] = (keyword_search(con, " ".join(extra_keywords), k), 1.0)
     scores: dict[int, float] = {}
     via: dict[int, list[str]] = {}
     for name, (ids, w) in rankings.items():
@@ -103,11 +108,118 @@ def hybrid(con: sqlite3.Connection, query: str, identifiers: list[str] | None = 
     return hits[:limit]
 
 
+# --- prerequisite hop -------------------------------------------------------------------
+# A sample that matches the question ("パスキー" -> Auth_Support/Passkey) works only because of
+# settings in its definition file (authentication / storing: credential / target: field-user).
+# Those settings are explained in the manual pages that never mention the question's words, so
+# similarity search cannot reach them. Follow the sample's definition keys to the manual's
+# explanation of each key instead.
+
+_DEF_LINE = re.compile(r"^\s*(?:-\s+)?([A-Za-z][\w-]*)\s*:\s*(.*)$|'([A-Za-z][\w-]*)'\s*=>\s*(.*)$")
+_WORD = re.compile(r"[A-Za-z][\w-]{2,}")
+_df_cache: dict[str, float] | None = None
+
+
+def _def_keys(content: str) -> tuple[list[str], set[str]]:
+    """(keys in order, value words) of a YAML / PHP definition file."""
+    keys, values = [], set()
+    for line in content.splitlines():
+        for m in _DEF_LINE.finditer(line):
+            key = m.group(1) or m.group(3)
+            keys.append(key)
+            values.update(w.lower() for w in _WORD.findall(m.group(2) or m.group(4) or ""))
+    return list(dict.fromkeys(keys)), values
+
+
+def _key_doc_freq(con: sqlite3.Connection) -> dict[str, float]:
+    """Share of sample definition files using each key ('name' ~ 1.0, 'storing' rare)."""
+    global _df_cache
+    if _df_cache is None:
+        rows = con.execute("SELECT content FROM chunks WHERE kind='sample_def'").fetchall()
+        cnt: dict[str, int] = {}
+        for r in rows:
+            for k in _def_keys(r["content"])[0]:
+                cnt[k] = cnt.get(k, 0) + 1
+        _df_cache = {k: v / max(1, len(rows)) for k, v in cnt.items()}
+    return _df_cache
+
+
+def prerequisites(con: sqlite3.Connection, hits: list[Hit], max_keys: int | None = None,
+                  max_df: float = 0.25) -> list[Hit]:
+    """The manual page that explains the top sample hits' distinctive settings: its intro section
+    plus the rows for up to `max_keys` of those settings."""
+    max_keys = config.PREREQ_KEYS if max_keys is None else max_keys
+    if max_keys <= 0:
+        return []
+    sample_ids = list(dict.fromkeys(h.sample_id for h in hits[:5] if h.source == "samples" and h.sample_id))[:2]
+    if not sample_ids:
+        return []
+    df = _key_doc_freq(con)
+    keys: list[str] = []
+    values: set[str] = set()
+    for sid in sample_ids:
+        r = con.execute("SELECT content FROM chunks WHERE sample_id=? AND kind='sample_def' ORDER BY id LIMIT 1",
+                        (sid,)).fetchone()
+        if r:
+            k, v = _def_keys(r["content"])
+            keys += k
+            values |= v
+    keys = sorted(dict.fromkeys(k for k in keys if df.get(k, 1.0) <= max_df), key=lambda k: df.get(k, 1.0))
+    if not keys:
+        return []
+    # manual rows explaining each key, grouped by page
+    by_page: dict[str, dict[str, tuple[int, sqlite3.Row]]] = {}
+    for k in keys:
+        rows = con.execute("SELECT * FROM chunks WHERE source='manual' AND kind='definition_key' AND symbol=?",
+                           (k,)).fetchall()
+        for r in rows:
+            # several rows per key on one page: prefer the one mentioning the sample's values
+            overlap = len(values & {w.lower() for w in _WORD.findall(r["content"])})
+            cur = by_page.setdefault(r["url"], {}).get(k)
+            if cur is None or overlap > cur[0]:
+                by_page[r["url"]][k] = (overlap, r)
+    if not by_page:
+        return []
+    # the page explaining most of the sample's distinctive settings is its prerequisite reading
+    pages = sorted(by_page, key=lambda u: -sum(1.0 - df.get(k, 1.0) for k in by_page[u]))
+    seen = {h.id for h in hits}
+    out: list[Hit] = []
+
+    def add(r: sqlite3.Row) -> None:
+        if r["id"] not in seen:
+            seen.add(r["id"])
+            out.append(Hit(r["id"], r["source"], r["kind"], r["title"], r["url"], r["content"],
+                           r["symbol"] or "", r["sample_id"] or "", r["weight"], 0.0, ["prereq"]))
+
+    intro = con.execute("SELECT * FROM chunks WHERE url=? AND kind='section' ORDER BY id LIMIT 1",
+                        (pages[0],)).fetchone()
+    if intro:
+        add(intro)
+    covered: set[str] = set()
+    for u in pages:
+        for k in sorted(by_page[u], key=lambda k: df.get(k, 1.0)):
+            if len(out) >= max_keys + 1 or k in covered:
+                continue
+            covered.add(k)
+            add(by_page[u][k][1])
+    return out
+
+
 def select_context(con: sqlite3.Connection, hits: list[Hit], n: int | None = None,
                    budget_chars: int | None = None) -> list[Hit]:
-    """Pick diverse chunks for the LLM; attach page + definition file to top sample summaries."""
+    """Pick diverse chunks for the LLM; attach page + definition file to top sample summaries,
+    then the manual's explanation of that sample's settings (prerequisites)."""
     n = n or config.CONTEXT_CHUNKS
     budget_chars = budget_chars or config.CONTEXT_CHARS
+    prereq: list[Hit] = []
+    reserved = 0
+    for p in prerequisites(con, hits):
+        if reserved + len(p.content) <= config.PREREQ_CHARS:
+            prereq.append(p)
+            reserved += len(p.content)
+    budget_chars -= reserved
+    prereq_ids = {p.id for p in prereq}
+    hits = [h for h in hits if h.id not in prereq_ids]
     chosen: list[Hit] = []
     per_url: dict[str, int] = {}
     used = 0
@@ -129,4 +241,4 @@ def select_context(con: sqlite3.Connection, hits: list[Hit], n: int | None = Non
                 extras.append(Hit(r["id"], r["source"], r["kind"], r["title"], r["url"], r["content"],
                                   r["symbol"] or "", r["sample_id"] or "", r["weight"], 0.0, ["sample-expand"]))
                 used += len(r["content"])
-    return chosen + extras
+    return chosen + extras + prereq

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import struct
 from datetime import datetime, timezone
@@ -56,6 +57,7 @@ def connect() -> sqlite3.Connection:
     con.execute("PRAGMA busy_timeout=10000")
     con.executescript(SCHEMA)
     _check_embed_model(con)
+    _check_fts(con)
     return con
 
 
@@ -75,8 +77,37 @@ def pack(vec: list[float]) -> bytes:
     return struct.pack(f"{len(vec)}f", *vec)
 
 
+# Bump when fts_text() changes: connect() then rebuilds the keyword index from the stored chunks
+# (no re-embedding needed).
+FTS_VERSION = "2"
+_CAMEL_IDENT = re.compile(r"[A-Za-z][A-Za-z0-9]*[a-z][A-Z][A-Za-z0-9]*")
+_CAMEL_PART = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
+
+
+def camel_words(text: str) -> str:
+    """'AuthPasskeyHandler' -> 'Auth Passkey Handler', so the word 'passkey' finds that class."""
+    words = []
+    for ident in _CAMEL_IDENT.findall(text):
+        words += _CAMEL_PART.findall(ident)
+    return " ".join(dict.fromkeys(words))
+
+
 def fts_text(title: str, symbol: str, content: str) -> tuple[str, str, str]:
-    return cjk_bigrams(title), symbol, cjk_bigrams(content)
+    sym = " ".join(p for p in (symbol, camel_words(f"{title} {symbol}")) if p)
+    return cjk_bigrams(title), sym, cjk_bigrams(content)
+
+
+def _check_fts(con: sqlite3.Connection) -> None:
+    row = con.execute("SELECT value FROM meta WHERE key='fts_version'").fetchone()
+    if row and row[0] == FTS_VERSION:
+        return
+    if con.execute("SELECT 1 FROM chunks LIMIT 1").fetchone():
+        con.execute("DELETE FROM chunks_fts")
+        for r in con.execute("SELECT id, title, symbol, content FROM chunks").fetchall():
+            con.execute("INSERT INTO chunks_fts (rowid, title, symbol, body) VALUES (?,?,?,?)",
+                        (r["id"], *fts_text(r["title"] or "", r["symbol"] or "", r["content"] or "")))
+    con.execute("INSERT OR REPLACE INTO meta VALUES ('fts_version', ?)", (FTS_VERSION,))
+    con.commit()
 
 
 def _delete_ids(con: sqlite3.Connection, ids: Iterable[int]):

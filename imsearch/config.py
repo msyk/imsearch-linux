@@ -97,6 +97,8 @@ RRF_K = 60
 CANDIDATES = _int("CANDIDATES", 30)          # per retriever
 CONTEXT_CHUNKS = _int("CONTEXT_CHUNKS", 5)   # chunks passed to the answer LLM
 CONTEXT_CHARS = _int("CONTEXT_CHARS", 7000)  # total characters of those chunks (must fit NUM_CTX)
+PREREQ_KEYS = _int("PREREQ_KEYS", 4)        # manual explanations of a hit sample's settings (0 = off)
+PREREQ_CHARS = _int("PREREQ_CHARS", 2000)   # part of CONTEXT_CHARS reserved for them
 # Run the LLM query analysis for Japanese questions too (English ones are always translated).
 # Off by default: on CPU it costs several seconds and small models add little.
 ANALYZE_JA = _bool("ANALYZE_JA", False)

@@ -6,6 +6,7 @@ import re
 from markdownify import markdownify
 from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
+from . import config
 from .chunk import Chunk, split_text
 
 HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
@@ -16,6 +17,31 @@ NOT_API = {"function", "require", "require_once", "include", "array"}
 
 def clean_ws(s: str) -> str:
     return " ".join(s.split())
+
+
+# Link texts that say nothing about the target page ("こちらのページ" etc.)
+GENERIC_LINK = re.compile(r"^(?:こちら|ここ|これ|詳細|詳しく|参照|リンク|→|＞|>)")
+
+
+def resolve_page_title(rel: str, link_title: str, html: str) -> str:
+    """Title of a manual page: config override > descriptive link text > the page's own headings.
+
+    The crawler records the text of the first link to each page; for pages only linked as
+    "こちらのページ" that is useless, and some pages have neither <title> nor a page-level h1."""
+    override = (config.exclude_config()["manual"].get("titles") or {}).get(rel)
+    if override:
+        return clean_ws(override)
+    t = clean_ws(link_title or "")
+    if t and not GENERIC_LINK.match(t):
+        return t
+    tree = HTMLParser(html)
+    tt = tree.css_first("title")
+    if tt and tt.text(strip=True):
+        return clean_ws(tt.text(strip=True))
+    root = tree.css_first("article") or tree.body
+    h1s = [clean_ws(h.text(strip=True)) for h in (root.css("h1") if root else [])]
+    h1s = [h for h in h1s if h]
+    return "・".join(h1s[:3]) or rel
 
 
 def html_to_markdown(html: str) -> tuple[str, str]:
@@ -67,8 +93,8 @@ def _api_symbols(text: str) -> list[str]:
 
 
 def parse_manual_page(rel: str, url: str, title: str, html: str) -> list[Chunk]:
-    first_h1, md = html_to_markdown(html)
-    page_title = clean_ws(title or first_h1 or rel)
+    _, md = html_to_markdown(html)
+    page_title = resolve_page_title(rel, title, html)
     category = rel.split("/")[0] if "/" in rel else ""
     chunks: list[Chunk] = []
 

@@ -11,6 +11,7 @@ import httpx
 from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
 from . import config
+from .parse_html import GENERIC_LINK
 
 USER_AGENT = "imsearch/0.1 (INTER-Mediator manual indexer)"
 MAX_PAGES = 400
@@ -102,8 +103,11 @@ def crawl(log=print) -> dict[str, dict]:
                 if not nxt:
                     continue
                 nrel = _rel(nxt)
-                text = a.text(strip=True)
-                if text and nrel not in titles:
+                text = " ".join(a.text(strip=True).split())
+                # keep the first descriptive link text ("こちらのページ" is replaced by a later, better one)
+                if text and (nrel not in titles or GENERIC_LINK.match(titles[nrel])) and not GENERIC_LINK.match(text):
+                    titles[nrel] = text
+                elif text and nrel not in titles:
                     titles[nrel] = text
                 if is_excluded(nrel):
                     continue

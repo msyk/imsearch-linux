@@ -1,4 +1,6 @@
-# INTER-Mediator 固有用語の日英対応表（翻訳プロンプトに埋め込む）
+# INTER-Mediator 固有用語の日英対応表
+# 用途: 1) 翻訳プロンプトへの埋め込み  2) 日本語の質問に含まれる語の英語を検索語に追加
+#      （ソースコードやサンプルのパスは英語なので、「パスキー」から Passkey 関連のコードに届くようにする）
 # 訳語の揺れを防ぐため、作者が随時追記してください。
 - ja: 定義ファイル
   en: definition file
@@ -40,3 +42,21 @@
   en: options
 - ja: データベース接続設定
   en: database connection settings
+- ja: パスキー
+  en: passkey
+- ja: ログイン
+  en: login
+- ja: パスワード
+  en: password
+- ja: 二要素認証
+  en: two-factor authentication
+- ja: ユーザー登録
+  en: user enrollment
+- ja: ファイルのアップロード
+  en: file upload
+- ja: エクスポート
+  en: export
+- ja: ローカライズ
+  en: localization
+- ja: 多言語
+  en: localization
