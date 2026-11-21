@@ -150,7 +150,7 @@ if [ "$WANT_WEB" = 1 ]; then
   $SUDO systemctl daemon-reload
   $SUDO systemctl enable --now imsearch-web.service
   $SUDO systemctl restart imsearch-web.service
-  echo "http://127.0.0.1:8000/ で起動しました（外部公開は deploy/nginx-imsearch.conf を参照）"
+  echo "http://127.0.0.1:8000/ で起動しました（外部公開は deploy/nginx-imsearch.conf か deploy/apache-imsearch.conf を参照）"
 fi
 
 step "診断"

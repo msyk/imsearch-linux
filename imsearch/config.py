@@ -126,6 +126,12 @@ WEB_PORT = _int("WEB_PORT", 8000)
 WEB_CONCURRENCY = _int("WEB_CONCURRENCY", 1)  # answers generated at the same time (1 for 2-4GB RAM)
 WEB_MAX_QUEUE = _int("WEB_MAX_QUEUE", 2)      # waiting answers; more requests get "busy"
 WEB_MAX_QUESTION = _int("WEB_MAX_QUESTION", 500)  # characters
+# Answers per client IP per minute (0 = no limit). For reverse proxies without their own
+# rate limiter (Apache). The client IP comes from X-Forwarded-For sent by a proxy on 127.0.0.1.
+WEB_ASK_PER_MIN = _int("WEB_ASK_PER_MIN", 0)
+# Public path prefix when the proxy serves the app below a sub-path, e.g. "/imsearch"
+# (the proxy strips it). Only the API docs page needs it; the UI uses relative URLs.
+WEB_ROOT_PATH = _env("WEB_ROOT_PATH", "").rstrip("/")
 
 # SQLite page cache (KiB). Small on purpose; the OS file cache does the rest.
 SQLITE_CACHE_KB = _int("SQLITE_CACHE_KB", 8192)

@@ -15,11 +15,12 @@ import asyncio
 import json
 import threading
 import time
+from collections import deque
 from contextlib import closing
 from pathlib import Path
 from typing import AsyncIterator, Optional
 
-from fastapi import FastAPI, HTTPException, Query as Q
+from fastapi import FastAPI, HTTPException, Query as Q, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -35,6 +36,7 @@ app = FastAPI(title="imsearch", description="INTER-Mediator 開発者向け検�
 
 _gen_slots = threading.Semaphore(config.WEB_CONCURRENCY)  # answers being generated
 _waiting = 0  # requests generating or queued (touched only on the event loop)
+_ask_log: dict[str, deque] = {}  # client IP -> times of recent /api/ask requests
 
 
 def _excerpt(text: str, n: int = 220) -> str:
@@ -197,9 +199,28 @@ async def _ask_events(q: str, sources: Optional[list[str]], show_context: bool) 
         _waiting -= 1
 
 
+def _rate_limit(ip: str) -> None:
+    """At most WEB_ASK_PER_MIN answers per client IP in any 60 seconds (Apache has no limit_req)."""
+    if config.WEB_ASK_PER_MIN <= 0:
+        return
+    now = time.monotonic()
+    if len(_ask_log) > 10000:  # forget idle clients
+        for k in [k for k, v in _ask_log.items() if not v or now - v[-1] > 60]:
+            del _ask_log[k]
+    log = _ask_log.setdefault(ip, deque())
+    while log and now - log[0] > 60:
+        log.popleft()
+    if len(log) >= config.WEB_ASK_PER_MIN:
+        raise HTTPException(429, f"回答の作成は 1 分に {config.WEB_ASK_PER_MIN} 回までです。"
+                                 f"{int(60 - (now - log[0])) + 1} 秒ほどお待ちください。",
+                            headers={"Retry-After": str(int(60 - (now - log[0])) + 1)})
+    log.append(now)
+
+
 @app.post("/api/ask")
-def ask(req: AskRequest):
+async def ask(req: AskRequest, request: Request):
     q = _check_question(req.q)
+    _rate_limit(request.client.host if request.client else "-")
     return StreamingResponse(_ask_events(q, _sources(req.sources), req.show_context),
                              media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

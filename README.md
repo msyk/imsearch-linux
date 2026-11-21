@@ -84,7 +84,17 @@ git clone https://github.com/msyk/imsearch-linux.git && cd imsearch-linux
 
 ### インターネットに公開する
 
-`imsearch serve` は既定で 127.0.0.1 だけで待ち受けます。公開するときは nginx などのリバースプロキシを前に置いてください。設定例は [deploy/nginx-imsearch.conf](deploy/nginx-imsearch.conf) です（SSE を逐次届けるための `proxy_buffering off`、長い生成に合わせたタイムアウト、IP ごとの回答リクエスト数の制限を含みます）。HTTPS は certbot などで設定します。
+`imsearch serve` は既定で 127.0.0.1 だけで待ち受けます。公開するときは nginx や Apache をリバースプロキシとして前に置いてください。HTTPS は certbot などで設定します。
+
+| ファイル | 用途 |
+|---|---|
+| [deploy/nginx-imsearch.conf](deploy/nginx-imsearch.conf) | nginx。専用のホスト名で公開 |
+| [deploy/apache-imsearch.conf](deploy/apache-imsearch.conf) | Apache。専用のホスト名で公開（`sites-available` に置く） |
+| [deploy/apache-imsearch-subpath.conf](deploy/apache-imsearch-subpath.conf) | Apache。既存のサイトの `/imsearch/` 以下で公開（INTER-Mediator のアプリを公開している Apache への相乗りなど。`<VirtualHost>` の中で `Include`） |
+
+どの設定例も、回答（Server-Sent Events）を逐次届ける設定、長い生成に合わせたタイムアウト、大きな本文の拒否を含みます。Apache で必要なモジュールは `proxy` `proxy_http` `headers` です（`sudo a2enmod proxy proxy_http headers`）。
+
+Apache には nginx の `limit_req` に当たる、IP ごとの回数制限が標準でありません。そのため imsearch 側で制限します（`imsearch.env` に `IMSEARCH_WEB_ASK_PER_MIN=6` と書くと、回答は IP ごとに 1 分 6 回まで。超えると 429）。クライアントの IP は、プロキシが付ける `X-Forwarded-For` から取ります（127.0.0.1 からの接続だけを信用するので、`ProxyPass` には `localhost` ではなく `127.0.0.1` と書きます）。`/imsearch/` 以下で公開するときは `IMSEARCH_WEB_ROOT_PATH=/imsearch` も書きます（API ドキュメントのページ用。画面は相対 URL なのでそのままで動きます）。
 
 ## 索引を別マシンで作る（推奨）
 
@@ -155,6 +165,8 @@ OS・sshd などの 0.3〜0.4GB を足すと 2GB ぎりぎりなので、2GB 機
 | `IMSEARCH_NUM_THREAD` | `0`（自動。コンテナ等の CPU 制限を検出） |
 | `IMSEARCH_WEB_HOST` / `IMSEARCH_WEB_PORT` | `127.0.0.1` / `8000` |
 | `IMSEARCH_WEB_CONCURRENCY` / `IMSEARCH_WEB_MAX_QUEUE` | `1` / `2` |
+| `IMSEARCH_WEB_ASK_PER_MIN` | `0`（IP ごとの 1 分あたりの回答数の上限。`0` で制限なし。Apache で公開するときに） |
+| `IMSEARCH_WEB_ROOT_PATH` | 空（`/imsearch/` などサブパスで公開するときのパス） |
 | `IMSEARCH_DB` | `data/imsearch.db` |
 
 全項目は [imsearch.env.example](imsearch.env.example) にあります。
@@ -231,6 +243,8 @@ deploy/
   imsearch-ingest.timer
   imsearch-web.service     Web アプリの常駐
   nginx-imsearch.conf      nginx で公開する場合の設定例
+  apache-imsearch.conf     Apache で公開する場合の設定例（専用のホスト名）
+  apache-imsearch-subpath.conf  Apache の既存サイトの /imsearch/ 以下で公開する場合の設定例
 scripts/setup-ubuntu.sh    Ubuntu 用セットアップ
 ```
 

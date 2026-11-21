@@ -110,7 +110,7 @@ footer a { color: var(--muted); }
   </div>
 
   <footer id="footer">回答は小さな言語モデルで生成しており、誤りを含むことがあります。必ず参考資料の原典で確認してください。
-    · <a href="/api/docs">API</a> · <a href="https://github.com/msyk/imsearch-linux">GitHub</a>
+    · <a href="api/docs">API</a> · <a href="https://github.com/msyk/imsearch-linux">GitHub</a>
     <div id="health"></div></footer>
 </main>
 
@@ -207,7 +207,7 @@ async function doSearch() {
   busy(true); setStatus("検索中…");
   $("#answer-card").classList.add("hidden");
   try {
-    const r = await fetch(`/api/search?${params}`);
+    const r = await fetch(`api/search?${params}`);
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || r.statusText);
     const note = d.lang === "en" ? `（日本語に翻訳して検索: ${d.query_ja}）` : "";
@@ -233,7 +233,7 @@ async function doAsk() {
     ans.innerHTML = html;
   };
   try {
-    const r = await fetch("/api/ask", {
+    const r = await fetch("api/ask", {
       method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
       body: JSON.stringify({ q, sources: selectedSources(), show_context: true }),
     });
@@ -273,7 +273,7 @@ $("#btn-stop").addEventListener("click", () => controller && controller.abort())
 $("#q").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); doAsk(); } });
 document.querySelectorAll(".examples a").forEach((a) => a.addEventListener("click", () => { $("#q").value = a.textContent; $("#q").focus(); }));
 
-fetch("/api/health").then((r) => r.json()).then((h) => {
+fetch("api/health").then((r) => r.json()).then((h) => {
   $("#health").textContent = `索引 ${h.chunks.toLocaleString()} 件（更新 ${String(h.updated_at || "").slice(0, 10)}）· 回答 ${h.chat_model} · 埋め込み ${h.embed_model}` + (h.llm_ok ? "" : " · ⚠ LLM サーバーに接続できません");
 }).catch(() => {});
 </script>

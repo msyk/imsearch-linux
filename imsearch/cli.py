@@ -172,7 +172,7 @@ def eval_cmd(
 
 @app.command()
 def serve(
-    host: str = typer.Option(config.WEB_HOST, help="待ち受けアドレス（公開時は nginx 等の後ろに置く）"),
+    host: str = typer.Option(config.WEB_HOST, help="待ち受けアドレス（公開時は nginx・Apache 等の後ろに置く）"),
     port: int = typer.Option(config.WEB_PORT, help="ポート番号"),
 ):
     """Web アプリ（ブラウザ UI と HTTP API）を起動する。"""
@@ -183,7 +183,7 @@ def serve(
     console.print(f"imsearch web: http://{host}:{port}/  (API: /api/search, /api/ask, /api/docs)")
     # one worker process: the models live in Ollama, the app itself stays small
     uvicorn.run("imsearch.web:app", host=host, port=port, workers=1, log_level="info",
-                proxy_headers=True, forwarded_allow_ips="127.0.0.1")
+                proxy_headers=True, forwarded_allow_ips="127.0.0.1", root_path=config.WEB_ROOT_PATH)
 
 
 def _meminfo() -> dict[str, int]:
